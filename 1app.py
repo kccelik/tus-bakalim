@@ -2,6 +2,7 @@ import os
 import json
 import sqlite3
 import re
+from collections import Counter, defaultdict
 from flask import Flask, render_template, request, jsonify, send_from_directory
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -12,8 +13,15 @@ if not os.path.exists(DB_PATH):
 CLEAN_IMG_DIR = os.path.join(BASE_DIR, "exports", "clean_images")
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
-from auth import init_auth
+from auth import init_auth, current_user, get_db as get_progress_db
+import srs
 init_auth(app)
+
+SUBJECTS = [
+    "Anatomi", "Histoloji ve Embriyoloji", "Fizyoloji", "Tıbbi Biyokimya",
+    "Tıbbi Mikrobiyoloji", "Tıbbi Patoloji", "Tıbbi Farmakoloji",
+    "Dahiliye Grubu", "Pediatri", "Genel Cerrahi", "Küçük Stajlar", "Kadın Hastalıkları ve Doğum"
+]
 
 def turkish_lower(text):
     if not text:
@@ -118,15 +126,10 @@ def index():
     # Python tarafında temiz JSON dökümü hazırlıyoruz
     exams_json_str = json.dumps(exams_by_year, ensure_ascii=False)
 
-    subjects = [
-        "Anatomi", "Histoloji ve Embriyoloji", "Fizyoloji", "Tıbbi Biyokimya",
-        "Tıbbi Mikrobiyoloji", "Tıbbi Patoloji", "Tıbbi Farmakoloji",
-        "Dahiliye Grubu", "Pediatri", "Genel Cerrahi", "Küçük Stajlar", "Kadın Hastalıkları ve Doğum"
-    ]
     return render_template("index.html", 
                            exams_json=exams_json_str, 
                            sorted_years=sorted_years, 
-                           subjects=subjects, 
+                           subjects=SUBJECTS, 
                            total_q=total_q, 
                            total_img_q=total_img_q)
 
@@ -154,6 +157,14 @@ def get_questions():
 
     if visual_only == "1":
         sql += " AND image_path IS NOT NULL"
+
+    if request.args.get("mistakes") == "1":
+        codes = my_wrong_codes()
+        if not codes:
+            conn.close()
+            return jsonify([])
+        sql += f" AND q_code IN ({','.join('?' * len(codes))})"
+        params.extend(codes)
         
     if query:
         norm_query = turkish_lower(query)
@@ -173,19 +184,151 @@ def get_questions():
         if subject and q_subj != subject:
             continue
 
-        questions.append({
-            "id": r["id"],
-            "q_code": r["q_code"],
-            "exam_name": r["exam_name"],
-            "q_num": r["q_num"],
-            "subject": q_subj,
-            "vignette": r["vignette"],
-            "options": json.loads(r["options_json"]) if r["options_json"] else {},
-            "correct_opt": r["correct_opt"],
-            "image_path": r["image_path"]
-        })
+        questions.append(row_to_question(r, q_subj))
     conn.close()
     return jsonify(questions)
+
+# ---------- personal progress (uses progress.db via auth/srs) ----------
+
+def row_to_question(r, subject=None):
+    keys = r.keys()
+    q = {
+        "id": r["id"],
+        "q_code": r["q_code"],
+        "exam_name": r["exam_name"],
+        "q_num": r["q_num"],
+        "subject": subject or get_subject(r["exam_name"], r["q_num"]),
+        "vignette": r["vignette"],
+        "options": json.loads(r["options_json"]) if r["options_json"] else {},
+        "correct_opt": r["correct_opt"],
+        "image_path": r["image_path"],
+    }
+    # filled later by the explanation batch job (step 4), if present
+    for extra in ("topic", "explanation", "tip"):
+        if extra in keys and r[extra]:
+            q[extra] = r[extra]
+    return q
+
+
+_META = None
+
+def question_meta():
+    """q_code -> exam, number, subject, year for all questions (cached;
+    restart the app after rebuilding the question database)."""
+    global _META
+    if _META is None:
+        conn = get_db_connection()
+        rows = conn.execute("SELECT q_code, exam_name, q_num FROM questions").fetchall()
+        conn.close()
+        _META = {}
+        for r in rows:
+            m = re.search(r"(20\d\d)", r["exam_name"] or "")
+            _META[r["q_code"]] = {
+                "exam_name": r["exam_name"], "q_num": r["q_num"],
+                "subject": get_subject(r["exam_name"], r["q_num"]),
+                "year": m.group(1) if m else None,
+            }
+    return _META
+
+
+def my_wrong_codes():
+    """Questions whose latest answer by the current user was wrong."""
+    rows = get_progress_db().execute(
+        """SELECT q_code, correct FROM attempts WHERE user_id = ? ORDER BY id""",
+        (current_user()["id"],)).fetchall()
+    last = {}
+    for r in rows:
+        last[r["q_code"]] = r["correct"]
+    return [c for c, ok in last.items() if not ok]
+
+
+def fetch_questions_by_codes(codes):
+    if not codes:
+        return []
+    conn = get_db_connection()
+    out = {}
+    for i in range(0, len(codes), 500):
+        chunk = codes[i:i + 500]
+        for r in conn.execute(
+                f"SELECT * FROM questions WHERE q_code IN ({','.join('?' * len(chunk))})", chunk):
+            out[r["q_code"]] = row_to_question(r)
+    conn.close()
+    return [out[c] for c in codes if c in out]
+
+
+@app.route("/api/questions/by_codes", methods=["POST"])
+def api_questions_by_codes():
+    codes = [str(c) for c in (request.get_json(silent=True) or {}).get("codes", [])][:2000]
+    return jsonify(fetch_questions_by_codes(codes))
+
+
+@app.route("/api/me/subjects")
+def api_me_subjects():
+    """Per subject: questions in the bank, solved, accuracy, open mistakes, due reviews."""
+    meta = question_meta()
+    uid = current_user()["id"]
+    pdb = get_progress_db()
+    bank = Counter(m["subject"] for m in meta.values())
+    s = defaultdict(lambda: {"answers": 0, "correct": 0, "solved": set(), "last": {}})
+    for r in pdb.execute("SELECT q_code, correct FROM attempts WHERE user_id = ? ORDER BY id", (uid,)):
+        m = meta.get(r["q_code"])
+        if not m:
+            continue
+        d = s[m["subject"]]
+        d["answers"] += 1
+        d["correct"] += r["correct"]
+        d["solved"].add(r["q_code"])
+        d["last"][r["q_code"]] = r["correct"]
+    due = Counter()
+    cards = Counter()
+    today = srs.today().isoformat()
+    for r in pdb.execute("SELECT q_code, due, suspended FROM srs_cards WHERE user_id = ?", (uid,)):
+        m = meta.get(r["q_code"])
+        if not m or r["suspended"]:
+            continue
+        cards[m["subject"]] += 1
+        if r["due"] <= today:
+            due[m["subject"]] += 1
+    out = []
+    for subj in SUBJECTS + sorted(set(bank) - set(SUBJECTS)):
+        d = s[subj]
+        out.append({
+            "subject": subj, "bank": bank.get(subj, 0), "solved": len(d["solved"]),
+            "answers": d["answers"], "correct": d["correct"],
+            "accuracy": round(100 * d["correct"] / d["answers"], 1) if d["answers"] else None,
+            "open_mistakes": sum(1 for ok in d["last"].values() if not ok),
+            "cards": cards.get(subj, 0), "due": due.get(subj, 0),
+        })
+    return jsonify(out)
+
+
+@app.route("/api/me/history")
+def api_me_history():
+    """Latest answers with exam / number / subject, newest first."""
+    meta = question_meta()
+    limit = min(int(request.args.get("limit", 100)), 1000)
+    rows = srs.history(get_progress_db(), current_user()["id"], limit)
+    for r in rows:
+        r.update(meta.get(r["q_code"], {}))
+    return jsonify(rows)
+
+
+@app.route("/api/review/session")
+def api_review_session():
+    """Due cards today with full question data; optional ?subject= filter."""
+    subject = request.args.get("subject", "")
+    meta = question_meta()
+    due = srs.due_cards(get_progress_db(), current_user()["id"])
+    per_subject = Counter(meta[c["q_code"]]["subject"] for c in due if c["q_code"] in meta)
+    if subject:
+        due = [c for c in due if meta.get(c["q_code"], {}).get("subject") == subject]
+    qs = {q["q_code"]: q for q in fetch_questions_by_codes([c["q_code"] for c in due[:200]])}
+    items = []
+    for c in due[:200]:
+        if c["q_code"] in qs:
+            items.append(dict(qs[c["q_code"]], card=c))
+    return jsonify(total=sum(per_subject.values()), per_subject=per_subject, items=items)
+
 
 @app.route("/exports/clean_images/<path:filename>")
 def serve_image(filename):

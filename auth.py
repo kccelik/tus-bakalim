@@ -1,4 +1,15 @@
+"""
+Login, user profiles and saved progress for TusBakalım.
 
+Plug into 1app.py with two lines (after `app = Flask(__name__)`):
+
+    from auth import init_auth
+    init_auth(app)
+
+Everything is stored in progress.db (users + attempts), separate from the
+question database, so rebuilding tus_database_v2.db never touches progress.
+progress.db and secret_key.txt must stay out of Git and out of rsync.
+"""
 import os
 import secrets
 import sqlite3
@@ -31,7 +42,7 @@ def is_page_navigation():
 
 
 # Paths that work without being logged in
-PUBLIC_ENDPOINTS = {"auth.login", "static"}
+PUBLIC_ENDPOINTS = {"auth.login", "auth.change_password", "static"}
 
 bp = Blueprint("auth", __name__)
 
@@ -69,8 +80,16 @@ def connect(path=PROGRESS_DB):
 
 
 def init_db(path=PROGRESS_DB):
+    import srs
     with connect(path) as conn:
         conn.executescript(SCHEMA)
+        srs.init_db(conn)
+        # cards for mistakes saved before the review engine existed
+        conn.execute(
+            """INSERT OR IGNORE INTO srs_cards (user_id, q_code, lapses, interval_days, due)
+               SELECT user_id, q_code, SUM(1 - correct), 0, ?
+               FROM attempts GROUP BY user_id, q_code HAVING SUM(1 - correct) > 0""",
+            (srs.today().isoformat(),))
 
 
 def get_db():
@@ -166,6 +185,29 @@ def login():
     return render_template("login.html", error=error)
 
 
+@bp.route("/password", methods=["GET", "POST"])
+def change_password():
+    error = message = None
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        old = request.form.get("old_password", "")
+        new = request.form.get("new_password", "")
+        new2 = request.form.get("new_password2", "")
+        row = get_db().execute(
+            "SELECT password_hash FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        if not row or not check_password_hash(row["password_hash"], old):
+            error = "Kullanıcı adı veya mevcut şifre hatalı."
+        elif len(new) < 6:
+            error = "Yeni şifre en az 6 karakter olmalı."
+        elif new != new2:
+            error = "Yeni şifreler eşleşmiyor."
+        else:
+            set_password(username, new)
+            message = "Şifren değişti. Artık yeni şifrenle giriş yapabilirsin."
+    return render_template("password.html", error=error, message=message)
+
+
 @bp.route("/logout")
 def logout():
     session.clear()
@@ -193,8 +235,10 @@ def api_attempt():
         "INSERT INTO attempts (user_id, q_code, chosen, correct, created_at) VALUES (?, ?, ?, ?, ?)",
         (current_user()["id"], q_code, chosen, correct, now_iso()),
     )
+    import srs
+    card = srs.record_answer(db, current_user()["id"], q_code, bool(correct))
     db.commit()
-    return jsonify(ok=True)
+    return jsonify(ok=True, card=dict(card) if card else None)
 
 
 @bp.route("/api/progress")
@@ -245,7 +289,11 @@ def init_auth(app):
     app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
     app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
     init_db()
+    if "auth" in app.blueprints:  # init_auth called twice: ignore
+        return
+    import srs
     app.register_blueprint(bp)
+    app.register_blueprint(srs.bp)
     app.teardown_appcontext(close_db)
 
     @app.before_request
