@@ -19,6 +19,10 @@
             }
         }
     </script>
+    <style>
+        .tab-btn.active { background:#3b82f6; color:#fff; border-color:#3b82f6; }
+        .bar:hover { opacity:.8; }
+    </style>
 </head>
 <body class="bg-darkbg text-slate-100 min-h-screen flex flex-col font-sans">
 
@@ -32,19 +36,25 @@
                 <span class="text-2xl">🩺</span>
                 <h1 class="text-xl font-bold tracking-tight text-white">TUS Bakalım</h1>
             </div>
-            <div class="text-xs text-slate-400 flex gap-3">
-                <span>📚 <b>{{ total_q }}</b> Soru</span>
-                <span>🖼️ <b>{{ total_img_q }}</b> Görselli</span>
+            <nav class="flex gap-1.5 text-xs font-semibold">
+                <button class="tab-btn active border border-slate-700 rounded-lg px-3 py-1.5" data-view="questions">📚 Sorular</button>
+                <button class="tab-btn border border-slate-700 rounded-lg px-3 py-1.5" data-view="me">📊 Panelim</button>
+                <button class="tab-btn border border-slate-700 rounded-lg px-3 py-1.5" data-view="review">🔁 Tekrar <span id="dueBadge" class="hidden ml-1 bg-red-600 text-white rounded-full px-1.5"></span></button>
+            </nav>
+            <div class="text-xs text-slate-400 flex items-center gap-3">
+                <span class="hidden sm:inline">📚 <b>{{ total_q }}</b> Soru</span>
+                <span>👤 <b class="text-slate-200">{{ current_username }}</b></span>
+                <a href="/logout" class="text-slate-400 hover:text-red-400">Çıkış</a>
             </div>
         </div>
     </header>
 
-    <!-- Kontrol ve Filtre Paneli -->
-    <main class="max-w-4xl mx-auto w-full p-4 flex-1 flex flex-col gap-4">
+    <!-- ===================== SORULAR ===================== -->
+    <main id="view-questions" class="view max-w-4xl mx-auto w-full p-4 flex-1 flex flex-col gap-4">
         <div class="bg-cardbg p-4 rounded-xl border border-slate-700 shadow-sm flex flex-col gap-3">
             <!-- Arama Kutusu -->
             <div class="relative">
-                <input type="text" id="searchInput" placeholder="Vaka, semptom, ilaç veya konu ara (örn: feokromositoma)..." 
+                <input type="text" id="searchInput" placeholder="Vaka, semptom, ilaç veya konu ara (örn: feokromositoma)..."
                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 pl-10 text-sm focus:outline-none focus:border-accent text-white placeholder-slate-500">
                 <span class="absolute left-3 top-2.5 text-slate-500">🔍</span>
             </div>
@@ -52,8 +62,6 @@
             <!-- Filtreler -->
             <div class="flex flex-wrap gap-2 items-center justify-between">
                 <div class="flex flex-wrap gap-2 flex-1">
-                    
-                    <!-- 1. KADEME: Yıl Filtresi -->
                     <select id="yearSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-accent text-white font-medium text-amber-400">
                         <option value="all">📅 Tüm Yıllar</option>
                         {% for y in sorted_years %}
@@ -61,12 +69,10 @@
                         {% endfor %}
                     </select>
 
-                    <!-- 2. KADEME: O Yıla Ait Sınavlar Filtresi -->
                     <select id="examSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-accent text-white max-w-[220px]">
                         <option value="">Tüm Sınavlar</option>
                     </select>
 
-                    <!-- Ders / Branş Filtresi -->
                     <select id="subjectSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-accent text-white font-medium text-emerald-400">
                         <option value="">Tüm Dersler</option>
                         {% for subj in subjects %}
@@ -74,9 +80,14 @@
                         {% endfor %}
                     </select>
 
-                    <!-- Sadece Şekilli Butonu -->
                     <button id="visualFilterBtn" class="bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg text-xs hover:border-accent flex items-center gap-1">
                         <span>🖼️</span> Sadece Şekilli
+                    </button>
+                    <button id="mistakesFilterBtn" class="bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg text-xs hover:border-red-500 flex items-center gap-1">
+                        <span>❌</span> Yanlışlarım
+                    </button>
+                    <button id="unsolvedFilterBtn" class="bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg text-xs hover:border-accent flex items-center gap-1">
+                        <span>🆕</span> Çözmediklerim
                     </button>
                 </div>
 
@@ -86,13 +97,11 @@
             </div>
         </div>
 
-        <!-- İlerleme ve Skor Çubuğu -->
         <div id="statsBar" class="text-xs text-slate-400 flex justify-between px-1 hidden">
             <span id="questionCount">0 soru bulundu</span>
             <span id="scoreText">Doğru: 0 | Yanlış: 0</span>
         </div>
 
-        <!-- Soruların Listelendiği Alan -->
         <div id="questionsContainer" class="flex flex-col gap-6">
             <div class="text-center py-16 text-slate-500">
                 <p class="text-4xl mb-2">📖</p>
@@ -101,8 +110,55 @@
         </div>
     </main>
 
+    <!-- ===================== PANELİM ===================== -->
+    <main id="view-me" class="view hidden max-w-4xl mx-auto w-full p-4 flex-1 flex flex-col gap-4">
+        <div id="meTiles" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3"></div>
+
+        <section class="bg-cardbg border border-slate-700 rounded-xl p-4">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="font-semibold text-sm">📅 Günlük çözülen soru (son 30 gün)</h2>
+                <div class="text-[11px] text-slate-400 flex gap-3">
+                    <span><span class="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500 align-middle"></span> doğru</span>
+                    <span><span class="inline-block w-2.5 h-2.5 rounded-sm bg-red-500 align-middle"></span> yanlış</span>
+                </div>
+            </div>
+            <div id="dayChart" class="h-40 flex items-end gap-[3px]"></div>
+            <div id="dayChartLabels" class="flex justify-between text-[10px] text-slate-500 mt-1"></div>
+        </section>
+
+        <section class="bg-cardbg border border-slate-700 rounded-xl p-4">
+            <h2 class="font-semibold text-sm mb-3">🧪 Derslere göre</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="text-slate-400 text-left">
+                        <tr><th class="py-1.5 pr-2">Ders</th><th class="pr-2">Çözülen</th><th class="pr-2">Doğruluk</th><th class="pr-2">Açık yanlış</th><th class="pr-2">Bugün tekrar</th><th></th></tr>
+                    </thead>
+                    <tbody id="subjectTable"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="bg-cardbg border border-slate-700 rounded-xl p-4">
+            <h2 class="font-semibold text-sm mb-3">🗂️ Çözdüğüm sorular</h2>
+            <div id="historyList" class="flex flex-col gap-3 text-xs"></div>
+            <button id="historyMore" class="hidden mt-3 text-xs text-accent hover:underline">Daha fazla göster</button>
+        </section>
+    </main>
+
+    <!-- ===================== TEKRAR ===================== -->
+    <main id="view-review" class="view hidden max-w-4xl mx-auto w-full p-4 flex-1 flex flex-col gap-4">
+        <section class="bg-cardbg border border-slate-700 rounded-xl p-4 flex flex-col gap-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="font-semibold text-sm">🔁 Günlük tekrar <span class="text-slate-400 font-normal">· yanlış yaptığın sorular, Anki gibi aralıklarla</span></h2>
+                <span id="reviewProgress" class="text-xs text-slate-400"></span>
+            </div>
+            <div id="reviewSubjects" class="flex flex-wrap gap-2"></div>
+        </section>
+        <div id="reviewContainer" class="flex flex-col gap-4"></div>
+    </main>
+
     <script>
-        // Veriyi güvenli HTML data özniteliğinden okuyoruz
+        // ---------------- ortak ----------------
         const storeElement = document.getElementById("examsDataStore");
         let examsData = {};
         try {
@@ -111,15 +167,131 @@
             console.error("Veri parse hatası:", e);
         }
 
-        let isVisualOnly = false;
-        let correctCount = 0;
-        let wrongCount = 0;
+        async function api(url, opts = {}) {
+            const res = await fetch(url, opts);
+            if (res.status === 401) { window.location = "/login"; throw new Error("login"); }
+            return res.json();
+        }
+        const postJSON = (url, body) => api(url, {
+            method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)
+        });
+        const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+        let progress = {};   // q_code -> {n, n_wrong, last_correct, last_chosen}
+        async function loadProgress() { progress = await api("/api/progress"); }
+
+        async function refreshDueBadge() {
+            const s = await api("/api/stats?days=1");
+            const b = document.getElementById("dueBadge");
+            const n = s.summary.due_today;
+            b.textContent = n;
+            b.classList.toggle("hidden", !n);
+        }
+
+        // ---------------- sekmeler ----------------
+        const views = { questions: null, me: loadDashboard, review: loadReview };
+        function showView(name, arg) {
+            document.querySelectorAll(".view").forEach(v => v.classList.add("hidden"));
+            document.getElementById("view-" + name).classList.remove("hidden");
+            document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.view === name));
+            if (views[name]) views[name](arg);
+            window.scrollTo(0, 0);
+        }
+        document.querySelectorAll(".tab-btn").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
+
+        // ---------------- soru kartı (liste + tekrar) ----------------
+        function buildCard(q, { onAnswer, showStatus = true } = {}) {
+            const card = document.createElement("div");
+            card.className = "bg-cardbg border border-slate-700 rounded-xl p-5 shadow-sm flex flex-col gap-4";
+
+            const p = progress[q.q_code];
+            let status = "";
+            if (showStatus && p) {
+                status = p.last_correct
+                    ? `<span class="text-[11px] text-emerald-400">✓ çözdün (${p.n}×)</span>`
+                    : `<span class="text-[11px] text-red-400">✗ son cevabın yanlış (${p.n}×)</span>`;
+            }
+            let badge = `
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="bg-slate-800 text-blue-400 text-xs px-2.5 py-1 rounded font-mono font-medium">${esc(q.exam_name)} • Soru ${q.q_num}</span>
+                    <span class="bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 text-xs px-2 py-0.5 rounded font-semibold">${esc(q.subject)}</span>
+                    ${q.topic ? `<span class="bg-slate-800 text-slate-300 text-xs px-2 py-0.5 rounded">${esc(q.topic)}</span>` : ""}
+                    ${q.correct_opt === "İPTAL" ? `<span class="bg-red-950 text-red-400 text-xs px-2 py-0.5 rounded font-bold border border-red-800">🚫 İPTAL</span>` : ""}
+                </div>`;
+
+            let imgHtml = "";
+            if (q.image_path) {
+                imgHtml = `
+                    <div class="mt-2 bg-slate-900 border border-slate-700 rounded-lg p-2 flex justify-center">
+                        <img src="/${q.image_path}" alt="Soru Görseli" class="max-h-72 object-contain rounded cursor-pointer hover:opacity-90" onclick="window.open(this.src)">
+                    </div>`;
+            }
+
+            card.innerHTML = `
+                <div class="flex justify-between items-center gap-2">${badge}${status}</div>
+                ${imgHtml}
+                <div class="text-sm sm:text-base leading-relaxed text-slate-100 font-normal select-text whitespace-pre-line">${q.vignette}</div>
+                <div class="opts flex flex-col gap-2 mt-2"></div>
+                <div class="after hidden"></div>`;
+
+            const optsBox = card.querySelector(".opts");
+            ["A", "B", "C", "D", "E"].forEach(ltr => {
+                if (!q.options[ltr]) return;
+                const btn = document.createElement("button");
+                btn.className = "option-card w-full text-left bg-slate-900/60 hover:bg-slate-900 border border-slate-700/80 p-3 rounded-lg text-sm flex items-start gap-3 transition-all";
+                btn.dataset.ltr = ltr;
+                btn.innerHTML = `<span class="font-bold text-accent px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">${ltr}</span>
+                                 <span class="flex-1 text-slate-200">${q.options[ltr]}</span>`;
+                btn.addEventListener("click", () => answer(card, q, ltr, onAnswer));
+                optsBox.appendChild(btn);
+            });
+            return card;
+        }
+
+        function answer(card, q, selected, onAnswer) {
+            const buttons = card.querySelectorAll(".opts button");
+            buttons.forEach(b => b.disabled = true);
+            const btn = card.querySelector(`.opts button[data-ltr="${selected}"]`);
+            const correct = q.correct_opt;
+
+            if (correct === "İPTAL") {
+                btn.classList.add("border-yellow-500", "bg-yellow-950/40");
+                showAfter(card, q, `<div class="text-yellow-400 text-sm">Bu soru ÖSYM tarafından İPTAL edilmiştir.</div>`);
+                if (onAnswer) onAnswer(null, selected);
+                return;
+            }
+            const ok = selected === correct;
+            btn.classList.remove("bg-slate-900/60", "border-slate-700/80");
+            if (ok) {
+                btn.classList.add("bg-emerald-950/60", "border-emerald-500", "text-emerald-200");
+            } else {
+                btn.classList.add("bg-red-950/60", "border-red-500", "text-red-200");
+                buttons.forEach(b => { if (b.dataset.ltr === correct) b.classList.add("bg-emerald-950/40", "border-emerald-500/80"); });
+            }
+            showAfter(card, q, "");
+            if (onAnswer) onAnswer(ok, selected);
+        }
+
+        // Dipnot: açıklama / ipucu (4. adımda veritabanına eklenecek)
+        function showAfter(card, q, extra) {
+            const box = card.querySelector(".after");
+            let html = extra || "";
+            if (q.explanation || q.tip) {
+                html += `<div class="border-t border-slate-700 pt-3 mt-1 text-sm flex flex-col gap-2">
+                    ${q.explanation ? `<div><span class="font-semibold text-sky-300">💡 Konu:</span> <span class="text-slate-300">${esc(q.explanation)}</span></div>` : ""}
+                    ${q.tip ? `<div><span class="font-semibold text-amber-300">🎯 İpucu:</span> <span class="text-slate-300">${esc(q.tip)}</span></div>` : ""}
+                </div>`;
+            }
+            if (html) { box.innerHTML = html; box.classList.remove("hidden"); }
+        }
+
+        // ---------------- SORULAR ----------------
+        let isVisualOnly = false, mistakesOnly = false, unsolvedOnly = false;
+        let correctCount = 0, wrongCount = 0;
 
         const yearSelect = document.getElementById("yearSelect");
         const examSelect = document.getElementById("examSelect");
         const subjectSelect = document.getElementById("subjectSelect");
-        const visualFilterBtn = document.getElementById("visualFilterBtn");
-        const loadBtn = document.getElementById("loadBtn");
         const searchInput = document.getElementById("searchInput");
         const container = document.getElementById("questionsContainer");
         const statsBar = document.getElementById("statsBar");
@@ -128,148 +300,234 @@
         function updateExamOptions() {
             const selectedYear = yearSelect.value;
             examSelect.innerHTML = '<option value="">O Yılın Tüm Sınavları</option>';
-
+            let list = [];
             if (selectedYear === "all") {
                 examSelect.innerHTML = '<option value="">Tüm Sınavlar</option>';
-                let allExams = [];
-                Object.values(examsData).forEach(list => allExams.push(...list));
-                allExams.sort().forEach(ex => {
-                    const opt = document.createElement("option");
-                    opt.value = ex;
-                    opt.textContent = ex;
-                    examSelect.appendChild(opt);
-                });
+                Object.values(examsData).forEach(l => list.push(...l));
+                list.sort();
             } else if (examsData[selectedYear]) {
-                examsData[selectedYear].forEach(ex => {
-                    const opt = document.createElement("option");
-                    opt.value = ex;
-                    opt.textContent = ex;
-                    examSelect.appendChild(opt);
-                });
+                list = examsData[selectedYear];
             }
+            list.forEach(ex => {
+                const opt = document.createElement("option");
+                opt.value = ex; opt.textContent = ex;
+                examSelect.appendChild(opt);
+            });
         }
-
         updateExamOptions();
 
-        yearSelect.addEventListener("change", () => {
-            updateExamOptions();
-            fetchQuestions();
-        });
+        yearSelect.addEventListener("change", () => { updateExamOptions(); fetchQuestions(); });
         examSelect.addEventListener("change", fetchQuestions);
         subjectSelect.addEventListener("change", fetchQuestions);
-        loadBtn.addEventListener("click", fetchQuestions);
-        searchInput.addEventListener("keypress", (e) => { if(e.key === "Enter") fetchQuestions(); });
+        document.getElementById("loadBtn").addEventListener("click", fetchQuestions);
+        searchInput.addEventListener("keypress", e => { if (e.key === "Enter") fetchQuestions(); });
 
-        visualFilterBtn.addEventListener("click", () => {
-            isVisualOnly = !isVisualOnly;
-            visualFilterBtn.classList.toggle("border-accent", isVisualOnly);
-            visualFilterBtn.classList.toggle("bg-blue-950", isVisualOnly);
-            fetchQuestions();
-        });
+        function toggleBtn(id, getter, setter, color) {
+            const b = document.getElementById(id);
+            b.addEventListener("click", () => {
+                setter(!getter());
+                b.classList.toggle(color, getter());
+                b.classList.toggle("bg-blue-950", getter());
+                fetchQuestions();
+            });
+        }
+        toggleBtn("visualFilterBtn", () => isVisualOnly, v => isVisualOnly = v, "border-accent");
+        toggleBtn("mistakesFilterBtn", () => mistakesOnly, v => { mistakesOnly = v; }, "border-red-500");
+        toggleBtn("unsolvedFilterBtn", () => unsolvedOnly, v => { unsolvedOnly = v; }, "border-accent");
 
         async function fetchQuestions() {
             container.innerHTML = '<div class="text-center py-12 text-slate-400">Sorular filtreleniyor... ⏳</div>';
-            
-            const year = yearSelect.value;
-            const exam = examSelect.value;
-            const subject = subjectSelect.value;
-            const q = searchInput.value;
-            const visual = isVisualOnly ? "1" : "0";
-
-            const url = `/api/questions?year=${encodeURIComponent(year)}&exam=${encodeURIComponent(exam)}&subject=${encodeURIComponent(subject)}&q=${encodeURIComponent(q)}&visual=${visual}&limit=250`;
-            const res = await fetch(url);
-            const questions = await res.json();
-
-            renderQuestions(questions);
+            const params = new URLSearchParams({
+                year: yearSelect.value, exam: examSelect.value, subject: subjectSelect.value,
+                q: searchInput.value, visual: isVisualOnly ? "1" : "0",
+                mistakes: mistakesOnly ? "1" : "0",
+                limit: unsolvedOnly ? "2000" : "250",
+            });
+            const [questions] = await Promise.all([api("/api/questions?" + params), loadProgress()]);
+            let list = questions;
+            if (unsolvedOnly) list = list.filter(q => !progress[q.q_code]).slice(0, 250);
+            renderQuestions(list);
         }
 
         function renderQuestions(questions) {
             statsBar.classList.remove("hidden");
             document.getElementById("questionCount").innerText = `${questions.length} soru listelendi`;
-            
             if (questions.length === 0) {
                 container.innerHTML = '<div class="text-center py-16 text-slate-500">Bu filtreye uygun soru bulunamadı. 🔍</div>';
                 return;
             }
-
             container.innerHTML = "";
-            questions.forEach((q) => {
-                const card = document.createElement("div");
-                card.className = "bg-cardbg border border-slate-700 rounded-xl p-5 shadow-sm flex flex-col gap-4";
-                
-                let badge = `
-                    <div class="flex flex-wrap items-center gap-2">
-                        <span class="bg-slate-800 text-blue-400 text-xs px-2.5 py-1 rounded font-mono font-medium">${q.exam_name} • Soru ${q.q_num}</span>
-                        <span class="bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 text-xs px-2 py-0.5 rounded font-semibold">${q.subject}</span>
-                    </div>
-                `;
-                if (q.correct_opt === "İPTAL") {
-                    badge += ` <span class="bg-red-950 text-red-400 text-xs px-2 py-0.5 rounded font-bold border border-red-800">🚫 İPTAL</span>`;
-                }
-
-                let imgHtml = "";
-                if (q.image_path) {
-                    imgHtml = `
-                        <div class="mt-2 bg-slate-900 border border-slate-700 rounded-lg p-2 flex justify-center">
-                            <img src="/${q.image_path}" alt="Soru Görseli" class="max-h-72 object-contain rounded cursor-pointer hover:opacity-90" onclick="window.open(this.src)">
-                        </div>
-                    `;
-                }
-
-                let optsHtml = '<div class="flex flex-col gap-2 mt-2">';
-                const letters = ['A', 'B', 'C', 'D', 'E'];
-                letters.forEach(ltr => {
-                    if (q.options[ltr]) {
-                        optsHtml += `
-                            <button class="option-card w-full text-left bg-slate-900/60 hover:bg-slate-900 border border-slate-700/80 p-3 rounded-lg text-sm flex items-start gap-3 transition-all"
-                                    onclick="checkAnswer(this, '${ltr}', '${q.correct_opt}')">
-                                <span class="font-bold text-accent px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">${ltr}</span>
-                                <span class="flex-1 text-slate-200">${q.options[ltr]}</span>
-                            </button>
-                        `;
-                    }
-                });
-                optsHtml += '</div>';
-
-                card.innerHTML = `
-                    <div class="flex justify-between items-center">${badge}</div>
-                    ${imgHtml}
-                    <div class="text-sm sm:text-base leading-relaxed text-slate-100 font-normal select-text whitespace-pre-line">${q.vignette}</div>
-                    ${optsHtml}
-                `;
-                container.appendChild(card);
-            });
+            questions.forEach(q => container.appendChild(buildCard(q, { onAnswer: (ok, chosen) => {
+                if (ok === null) return;                     // iptal: kaydetme
+                ok ? correctCount++ : wrongCount++;
+                scoreText.innerText = `Doğru: ${correctCount} | Yanlış: ${wrongCount}`;
+                postJSON("/api/attempt", { q_code: q.q_code, chosen, correct: ok })
+                    .then(() => { if (!ok) refreshDueBadge(); });
+                progress[q.q_code] = { n: (progress[q.q_code]?.n || 0) + 1, last_correct: ok ? 1 : 0 };
+            }})));
         }
 
-        function checkAnswer(btn, selected, correct) {
-            const parent = btn.parentElement;
-            const buttons = parent.querySelectorAll("button");
-            buttons.forEach(b => b.disabled = true);
+        // ---------------- PANELİM ----------------
+        const fmtDay = d => new Date(d + "T12:00:00").toLocaleDateString("tr-TR", { day: "numeric", month: "short" });
+        const fmtDayLong = d => new Date(d + "T12:00:00").toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long" });
 
-            if (correct === "İPTAL") {
-                btn.classList.add("border-yellow-500", "bg-yellow-950/40");
-                alert("Bu soru ÖSYM tarafından İPTAL edilmiştir.");
+        async function loadDashboard() {
+            const [stats, subjects] = await Promise.all([api("/api/stats?days=30"), api("/api/me/subjects")]);
+            const s = stats.summary;
+
+            const tile = (label, value, sub = "", color = "text-white") => `
+                <div class="bg-cardbg border border-slate-700 rounded-xl p-3">
+                    <div class="text-[11px] text-slate-400">${label}</div>
+                    <div class="text-2xl font-bold ${color}">${value}</div>
+                    <div class="text-[11px] text-slate-500">${sub}</div>
+                </div>`;
+            document.getElementById("meTiles").innerHTML =
+                tile("Bugün", s.today.questions, `${s.today.correct}/${s.today.answers} doğru`) +
+                tile("Toplam çözülen", s.questions, `${s.answers} cevap`) +
+                tile("Doğruluk", s.accuracy == null ? "–" : s.accuracy + "%", `${s.correct} doğru`, "text-emerald-400") +
+                tile("Seri", s.streak + " gün", "üst üste çalışılan", "text-amber-400") +
+                tile("Bugün tekrar", s.due_today, `${s.cards} kartın var`, s.due_today ? "text-red-400" : "text-white") +
+                tile("Öğrenildi", s.learned, "21+ gün aralıkta", "text-sky-400");
+
+            // günlük grafik
+            const days = stats.days;
+            const max = Math.max(1, ...days.map(d => d.answers));
+            document.getElementById("dayChart").innerHTML = days.map(d => {
+                const h = 100 * d.answers / max, wrong = d.answers - d.correct;
+                const title = `${fmtDay(d.day)}: ${d.questions} soru, ${d.correct} doğru, ${wrong} yanlış`;
+                return `<div class="bar flex-1 h-full flex flex-col justify-end cursor-default" title="${title}">
+                    <div class="w-full flex flex-col rounded-t overflow-hidden" style="height:${h}%">
+                        <div class="bg-red-500" style="flex:${wrong}"></div>
+                        <div class="bg-emerald-500" style="flex:${d.correct}"></div>
+                    </div>
+                    ${d.answers === 0 ? '<div class="w-full h-[2px] bg-slate-700"></div>' : ""}
+                </div>`;
+            }).join("");
+            const lab = [0, 10, 20, days.length - 1].map(i => days[i] ? fmtDay(days[i].day) : "");
+            document.getElementById("dayChartLabels").innerHTML = lab.map(l => `<span>${l}</span>`).join("");
+
+            // ders tablosu
+            document.getElementById("subjectTable").innerHTML = subjects.map(r => {
+                const pct = r.bank ? Math.round(100 * r.solved / r.bank) : 0;
+                const accColor = r.accuracy == null ? "text-slate-500" : r.accuracy >= 70 ? "text-emerald-400" : r.accuracy >= 50 ? "text-amber-400" : "text-red-400";
+                return `<tr class="border-t border-slate-700/60">
+                    <td class="py-2 pr-2 font-medium">${esc(r.subject)}</td>
+                    <td class="pr-2 min-w-[120px]">
+                        <div class="flex items-center gap-2"><div class="flex-1 h-1.5 bg-slate-800 rounded"><div class="h-1.5 bg-accent rounded" style="width:${pct}%"></div></div>
+                        <span class="text-slate-400 whitespace-nowrap">${r.solved}/${r.bank}</span></div></td>
+                    <td class="pr-2 ${accColor}">${r.accuracy == null ? "–" : r.accuracy + "%"}</td>
+                    <td class="pr-2 ${r.open_mistakes ? "text-red-400" : "text-slate-500"}">${r.open_mistakes}</td>
+                    <td class="pr-2 ${r.due ? "text-amber-300 font-semibold" : "text-slate-500"}">${r.due}</td>
+                    <td>${r.due ? `<button class="text-accent hover:underline whitespace-nowrap" onclick="showView('review', '${esc(r.subject)}')">Tekrar et →</button>` : ""}</td>
+                </tr>`;
+            }).join("");
+
+            historyLimit = 100;
+            loadHistory();
+        }
+
+        let historyLimit = 100;
+        async function loadHistory() {
+            const rows = await api("/api/me/history?limit=" + historyLimit);
+            const box = document.getElementById("historyList");
+            if (!rows.length) { box.innerHTML = '<div class="text-slate-500">Henüz soru çözmedin. Sorular sekmesinden başla. 📖</div>'; return; }
+            const byDay = {};
+            rows.forEach(r => (byDay[r.day] = byDay[r.day] || []).push(r));
+            box.innerHTML = Object.entries(byDay).map(([day, list]) => {
+                const ok = list.filter(r => r.correct).length;
+                return `<div>
+                    <div class="flex justify-between text-slate-400 mb-1.5"><span class="font-semibold text-slate-300">${fmtDayLong(day)}</span><span>${list.length} cevap · ${ok} doğru</span></div>
+                    <div class="flex flex-col divide-y divide-slate-800 bg-slate-900/50 rounded-lg">
+                    ${list.map(r => `<div class="flex items-center gap-2 px-3 py-1.5">
+                        <span class="${r.correct ? "text-emerald-400" : "text-red-400"} w-4">${r.correct ? "✓" : "✗"}</span>
+                        <span class="text-slate-300 flex-1 truncate">${esc(r.exam_name || r.q_code)} • Soru ${r.q_num ?? "?"}</span>
+                        <span class="text-emerald-300/80 hidden sm:inline">${esc(r.subject || "")}</span>
+                        <span class="text-slate-500 w-10 text-right">${new Date(r.created_at).toLocaleTimeString("tr-TR", {hour: "2-digit", minute: "2-digit"})}</span>
+                    </div>`).join("")}
+                    </div></div>`;
+            }).join("");
+            document.getElementById("historyMore").classList.toggle("hidden", rows.length < historyLimit);
+        }
+        document.getElementById("historyMore").addEventListener("click", () => { historyLimit += 200; loadHistory(); });
+
+        // ---------------- TEKRAR ----------------
+        let reviewQueue = [], reviewDone = 0, reviewSubject = "";
+        const GRADE_LABELS = { hard: "😐 Zor", good: "🙂 İyi", easy: "😎 Kolay" };
+
+        async function loadReview(subject) {
+            if (typeof subject === "string") reviewSubject = subject;
+            await loadProgress();
+            const data = await api("/api/review/session?subject=" + encodeURIComponent(reviewSubject));
+            reviewQueue = data.items; reviewDone = 0;
+
+            const chips = [["", "Hepsi", data.total], ...Object.entries(data.per_subject).sort((a, b) => b[1] - a[1]).map(([s, n]) => [s, s, n])];
+            document.getElementById("reviewSubjects").innerHTML = chips.map(([val, label, n]) =>
+                `<button class="text-xs border rounded-full px-3 py-1 ${val === reviewSubject ? "bg-accent border-accent text-white" : "border-slate-700 text-slate-300 hover:border-accent"}"
+                         onclick="loadReview(${JSON.stringify(val).replace(/"/g, "&quot;")})">${esc(label)} <b>${n}</b></button>`).join("");
+            nextReview();
+        }
+
+        function nextReview() {
+            const box = document.getElementById("reviewContainer");
+            document.getElementById("reviewProgress").textContent = reviewQueue.length || reviewDone
+                ? `${reviewDone} bitti · ${reviewQueue.length} kaldı` : "";
+            if (!reviewQueue.length) {
+                box.innerHTML = `<div class="text-center py-16 text-slate-400">
+                    <p class="text-4xl mb-2">🎉</p>
+                    <p>${reviewDone ? "Bugünkü tekrarlar bitti!" : "Bugün tekrar edilecek soru yok."}</p>
+                    <p class="text-xs text-slate-500 mt-2">Yanlış yaptığın her soru ertesi gün burada çıkar; doğru bildikçe aralık uzar (1 → 3 → 8 → 20 gün…).</p>
+                </div>`;
+                refreshDueBadge();
                 return;
             }
+            const q = reviewQueue[0];
+            const c = q.card;
+            box.innerHTML = "";
+            const info = document.createElement("div");
+            info.className = "text-[11px] text-slate-400 px-1";
+            info.textContent = `Bu soruyu ${c.lapses} kez yanlış yaptın · şu anki aralık ${c.interval_days} gün`;
+            box.appendChild(info);
 
-            if (selected === correct) {
-                btn.classList.remove("bg-slate-900/60", "border-slate-700/80");
-                btn.classList.add("bg-emerald-950/60", "border-emerald-500", "text-emerald-200");
-                correctCount++;
-            } else {
-                btn.classList.remove("bg-slate-900/60", "border-slate-700/80");
-                btn.classList.add("bg-red-950/60", "border-red-500", "text-red-200");
-                wrongCount++;
-
-                buttons.forEach(b => {
-                    const ltrSpan = b.querySelector("span");
-                    if (ltrSpan && ltrSpan.innerText.trim() === correct) {
-                        b.classList.add("bg-emerald-950/40", "border-emerald-500/80");
-                    }
-                });
-            }
-            scoreText.innerText = `Doğru: ${correctCount} | Yanlış: ${wrongCount}`;
+            const card = buildCard(q, { showStatus: false, onAnswer: async (ok, chosen) => {
+                const after = card.querySelector(".after");
+                after.classList.remove("hidden");
+                const bar = document.createElement("div");
+                bar.className = "flex flex-wrap gap-2 pt-3 border-t border-slate-700 mt-1";
+                if (ok === null) {           // iptal soru: tekrardan çıkar
+                    await postJSON(`/api/review/${encodeURIComponent(q.q_code)}/suspend`, {});
+                    bar.innerHTML = `<button class="next bg-accent px-4 py-2 rounded-lg text-xs font-semibold">Sonraki →</button>`;
+                } else if (!ok) {
+                    await postJSON(`/api/review/${encodeURIComponent(q.q_code)}`, { correct: false, chosen, grade: "again" });
+                    bar.innerHTML = `<span class="text-xs text-red-300 self-center flex-1">Yanlış — yarın tekrar sorulacak.</span>
+                        <button class="next bg-accent px-4 py-2 rounded-lg text-xs font-semibold">Sonraki →</button>`;
+                } else {
+                    bar.innerHTML = `<span class="text-xs text-emerald-300 self-center flex-1">Doğru! Ne kadar zorlandın?</span>` +
+                        Object.entries(GRADE_LABELS).map(([g, l]) =>
+                            `<button data-grade="${g}" class="grade border border-slate-600 hover:border-accent px-3 py-2 rounded-lg text-xs">${l}</button>`).join("");
+                }
+                after.appendChild(bar);
+                bar.querySelectorAll(".grade").forEach(b => b.addEventListener("click", async () => {
+                    bar.querySelectorAll("button").forEach(x => x.disabled = true);
+                    await postJSON(`/api/review/${encodeURIComponent(q.q_code)}`, { correct: true, chosen, grade: b.dataset.grade });
+                    reviewQueue.shift(); reviewDone++; nextReview();
+                }));
+                const nx = bar.querySelector(".next");
+                if (nx) nx.addEventListener("click", () => { reviewQueue.shift(); reviewDone++; nextReview(); });
+            }});
+            const skip = document.createElement("button");
+            skip.className = "self-end text-[11px] text-slate-500 hover:text-red-400";
+            skip.textContent = "Bu soruyu tekrardan çıkar";
+            skip.addEventListener("click", async () => {
+                await postJSON(`/api/review/${encodeURIComponent(q.q_code)}/suspend`, {});
+                reviewQueue.shift(); nextReview();
+            });
+            box.appendChild(card);
+            box.appendChild(skip);
         }
+
+        // açılış
+        refreshDueBadge();
+        loadProgress();
     </script>
 </body>
 </html>
