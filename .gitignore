@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+*.bak
+.DS_Store
+data/
+exports/
+*.db
+TusDenemeArşivi*/

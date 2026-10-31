@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TUS Bakalım - Soru Platformu</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darkbg: '#0f172a',
+                        cardbg: '#1e293b',
+                        accent: '#3b82f6'
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-darkbg text-slate-100 min-h-screen flex flex-col font-sans">
+
+    <!-- Veri Taşıyıcı Güvenli Gizli Alan -->
+    <div id="examsDataStore" data-exams='{{ exams_json | safe }}' class="hidden"></div>
+
+    <!-- Üst Bar -->
+    <header class="bg-cardbg border-b border-slate-700 sticky top-0 z-50 px-4 py-3 shadow-md">
+        <div class="max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center space-x-2">
+                <span class="text-2xl">🩺</span>
+                <h1 class="text-xl font-bold tracking-tight text-white">TUS Bakalım</h1>
+            </div>
+            <div class="text-xs text-slate-400 flex gap-3">
+                <span>📚 <b>{{ total_q }}</b> Soru</span>
+                <span>🖼️ <b>{{ total_img_q }}</b> Görselli</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Kontrol ve Filtre Paneli -->
+    <main class="max-w-4xl mx-auto w-full p-4 flex-1 flex flex-col gap-4">
+        <div class="bg-cardbg p-4 rounded-xl border border-slate-700 shadow-sm flex flex-col gap-3">
+            <!-- Arama Kutusu -->
+            <div class="relative">
+                <input type="text" id="searchInput" placeholder="Vaka, semptom, ilaç veya konu ara (örn: feokromositoma)..." 
+                       class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 pl-10 text-sm focus:outline-none focus:border-accent text-white placeholder-slate-500">
+                <span class="absolute left-3 top-2.5 text-slate-500">🔍</span>
+            </div>
+
+            <!-- Filtreler -->
+            <div class="flex flex-wrap gap-2 items-center justify-between">
+                <div class="flex flex-wrap gap-2 flex-1">
+                    
+                    <!-- 1. KADEME: Yıl Filtresi -->
+                    <select id="yearSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-accent text-white font-medium text-amber-400">
+                        <option value="all">📅 Tüm Yıllar</option>
+                        {% for y in sorted_years %}
+                        <option value="{{ y }}">{{ y }}</option>
+                        {% endfor %}
+                    </select>
+
+                    <!-- 2. KADEME: O Yıla Ait Sınavlar Filtresi -->
+                    <select id="examSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-accent text-white max-w-[220px]">
+                        <option value="">Tüm Sınavlar</option>
+                    </select>
+
+                    <!-- Ders / Branş Filtresi -->
+                    <select id="subjectSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-accent text-white font-medium text-emerald-400">
+                        <option value="">Tüm Dersler</option>
+                        {% for subj in subjects %}
+                        <option value="{{ subj }}">{{ subj }}</option>
+                        {% endfor %}
+                    </select>
+
+                    <!-- Sadece Şekilli Butonu -->
+                    <button id="visualFilterBtn" class="bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg text-xs hover:border-accent flex items-center gap-1">
+                        <span>🖼️</span> Sadece Şekilli
+                    </button>
+                </div>
+
+                <button id="loadBtn" class="bg-accent hover:bg-blue-600 px-5 py-2 rounded-lg text-xs font-semibold text-white shadow-md transition-colors">
+                    Soruları Getir
+                </button>
+            </div>
+        </div>
+
+        <!-- İlerleme ve Skor Çubuğu -->
+        <div id="statsBar" class="text-xs text-slate-400 flex justify-between px-1 hidden">
+            <span id="questionCount">0 soru bulundu</span>
+            <span id="scoreText">Doğru: 0 | Yanlış: 0</span>
+        </div>
+
+        <!-- Soruların Listelendiği Alan -->
+        <div id="questionsContainer" class="flex flex-col gap-6">
+            <div class="text-center py-16 text-slate-500">
+                <p class="text-4xl mb-2">📖</p>
+                <p>Bir yıl, sınav veya ders seçip "Soruları Getir"e basın.</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Veriyi güvenli HTML data özniteliğinden okuyoruz
+        const storeElement = document.getElementById("examsDataStore");
+        let examsData = {};
+        try {
+            examsData = JSON.parse(storeElement.getAttribute("data-exams") || "{}");
+        } catch (e) {
+            console.error("Veri parse hatası:", e);
+        }
+
+        let isVisualOnly = false;
+        let correctCount = 0;
+        let wrongCount = 0;
+
+        const yearSelect = document.getElementById("yearSelect");
+        const examSelect = document.getElementById("examSelect");
+        const subjectSelect = document.getElementById("subjectSelect");
+        const visualFilterBtn = document.getElementById("visualFilterBtn");
+        const loadBtn = document.getElementById("loadBtn");
+        const searchInput = document.getElementById("searchInput");
+        const container = document.getElementById("questionsContainer");
+        const statsBar = document.getElementById("statsBar");
+        const scoreText = document.getElementById("scoreText");
+
+        function updateExamOptions() {
+            const selectedYear = yearSelect.value;
+            examSelect.innerHTML = '<option value="">O Yılın Tüm Sınavları</option>';
+
+            if (selectedYear === "all") {
+                examSelect.innerHTML = '<option value="">Tüm Sınavlar</option>';
+                let allExams = [];
+                Object.values(examsData).forEach(list => allExams.push(...list));
+                allExams.sort().forEach(ex => {
+                    const opt = document.createElement("option");
+                    opt.value = ex;
+                    opt.textContent = ex;
+                    examSelect.appendChild(opt);
+                });
+            } else if (examsData[selectedYear]) {
+                examsData[selectedYear].forEach(ex => {
+                    const opt = document.createElement("option");
+                    opt.value = ex;
+                    opt.textContent = ex;
+                    examSelect.appendChild(opt);
+                });
+            }
+        }
+
+        updateExamOptions();
+
+        yearSelect.addEventListener("change", () => {
+            updateExamOptions();
+            fetchQuestions();
+        });
+        examSelect.addEventListener("change", fetchQuestions);
+        subjectSelect.addEventListener("change", fetchQuestions);
+        loadBtn.addEventListener("click", fetchQuestions);
+        searchInput.addEventListener("keypress", (e) => { if(e.key === "Enter") fetchQuestions(); });
+
+        visualFilterBtn.addEventListener("click", () => {
+            isVisualOnly = !isVisualOnly;
+            visualFilterBtn.classList.toggle("border-accent", isVisualOnly);
+            visualFilterBtn.classList.toggle("bg-blue-950", isVisualOnly);
+            fetchQuestions();
+        });
+
+        async function fetchQuestions() {
+            container.innerHTML = '<div class="text-center py-12 text-slate-400">Sorular filtreleniyor... ⏳</div>';
+            
+            const year = yearSelect.value;
+            const exam = examSelect.value;
+            const subject = subjectSelect.value;
+            const q = searchInput.value;
+            const visual = isVisualOnly ? "1" : "0";
+
+            const url = `/api/questions?year=${encodeURIComponent(year)}&exam=${encodeURIComponent(exam)}&subject=${encodeURIComponent(subject)}&q=${encodeURIComponent(q)}&visual=${visual}&limit=250`;
+            const res = await fetch(url);
+            const questions = await res.json();
+
+            renderQuestions(questions);
+        }
+
+        function renderQuestions(questions) {
+            statsBar.classList.remove("hidden");
+            document.getElementById("questionCount").innerText = `${questions.length} soru listelendi`;
+            
+            if (questions.length === 0) {
+                container.innerHTML = '<div class="text-center py-16 text-slate-500">Bu filtreye uygun soru bulunamadı. 🔍</div>';
+                return;
+            }
+
+            container.innerHTML = "";
+            questions.forEach((q) => {
+                const card = document.createElement("div");
+                card.className = "bg-cardbg border border-slate-700 rounded-xl p-5 shadow-sm flex flex-col gap-4";
+                
+                let badge = `
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="bg-slate-800 text-blue-400 text-xs px-2.5 py-1 rounded font-mono font-medium">${q.exam_name} • Soru ${q.q_num}</span>
+                        <span class="bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 text-xs px-2 py-0.5 rounded font-semibold">${q.subject}</span>
+                    </div>
+                `;
+                if (q.correct_opt === "İPTAL") {
+                    badge += ` <span class="bg-red-950 text-red-400 text-xs px-2 py-0.5 rounded font-bold border border-red-800">🚫 İPTAL</span>`;
+                }
+
+                let imgHtml = "";
+                if (q.image_path) {
+                    imgHtml = `
+                        <div class="mt-2 bg-slate-900 border border-slate-700 rounded-lg p-2 flex justify-center">
+                            <img src="/${q.image_path}" alt="Soru Görseli" class="max-h-72 object-contain rounded cursor-pointer hover:opacity-90" onclick="window.open(this.src)">
+                        </div>
+                    `;
+                }
+
+                let optsHtml = '<div class="flex flex-col gap-2 mt-2">';
+                const letters = ['A', 'B', 'C', 'D', 'E'];
+                letters.forEach(ltr => {
+                    if (q.options[ltr]) {
+                        optsHtml += `
+                            <button class="option-card w-full text-left bg-slate-900/60 hover:bg-slate-900 border border-slate-700/80 p-3 rounded-lg text-sm flex items-start gap-3 transition-all"
+                                    onclick="checkAnswer(this, '${ltr}', '${q.correct_opt}')">
+                                <span class="font-bold text-accent px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">${ltr}</span>
+                                <span class="flex-1 text-slate-200">${q.options[ltr]}</span>
+                            </button>
+                        `;
+                    }
+                });
+                optsHtml += '</div>';
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-center">${badge}</div>
+                    ${imgHtml}
+                    <div class="text-sm sm:text-base leading-relaxed text-slate-100 font-normal select-text whitespace-pre-line">${q.vignette}</div>
+                    ${optsHtml}
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function checkAnswer(btn, selected, correct) {
+            const parent = btn.parentElement;
+            const buttons = parent.querySelectorAll("button");
+            buttons.forEach(b => b.disabled = true);
+
+            if (correct === "İPTAL") {
+                btn.classList.add("border-yellow-500", "bg-yellow-950/40");
+                alert("Bu soru ÖSYM tarafından İPTAL edilmiştir.");
+                return;
+            }
+
+            if (selected === correct) {
+                btn.classList.remove("bg-slate-900/60", "border-slate-700/80");
+                btn.classList.add("bg-emerald-950/60", "border-emerald-500", "text-emerald-200");
+                correctCount++;
+            } else {
+                btn.classList.remove("bg-slate-900/60", "border-slate-700/80");
+                btn.classList.add("bg-red-950/60", "border-red-500", "text-red-200");
+                wrongCount++;
+
+                buttons.forEach(b => {
+                    const ltrSpan = b.querySelector("span");
+                    if (ltrSpan && ltrSpan.innerText.trim() === correct) {
+                        b.classList.add("bg-emerald-950/40", "border-emerald-500/80");
+                    }
+                });
+            }
+            scoreText.innerText = `Doğru: ${correctCount} | Yanlış: ${wrongCount}`;
+        }
+    </script>
+</body>
+</html>
