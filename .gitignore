@@ -7,3 +7,7 @@ data/
 exports/
 *.db
 TusDenemeArşivi*/
+progress.db*
+secret_key.txt
+progress.db*
+secret_key.txt

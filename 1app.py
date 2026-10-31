@@ -12,6 +12,8 @@ if not os.path.exists(DB_PATH):
 CLEAN_IMG_DIR = os.path.join(BASE_DIR, "exports", "clean_images")
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
+from auth import init_auth
+init_auth(app)
 
 def turkish_lower(text):
     if not text:
