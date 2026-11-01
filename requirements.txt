@@ -1,0 +1,4 @@
+flask>=3.1
+pymupdf>=1.28      # only for scanning/
+gunicorn>=23       # only on the server
+# ollama           # only for: python scanning/build_database_v2.py --vision

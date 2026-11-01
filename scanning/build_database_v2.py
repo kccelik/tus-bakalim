@@ -13,9 +13,9 @@ Ne değişti (v1'e göre):
      --vision ile yerel Qwen3-VL (Ollama) üzerinden okunuyor.
 
 Kullanım:
-  python build_database_v2.py                    # metinli PDF'ler -> tus_database_v2.db
-  python build_database_v2.py --vision           # + taranmış sayfaları Qwen3-VL ile oku
-  python build_database_v2.py --only 2015TUSIlkbaharTemel   # tek sınav (test için)
+  python scanning/build_database_v2.py                    # metinli PDF'ler -> tus_database_v2.db
+  python scanning/build_database_v2.py --vision           # + taranmış sayfaları Qwen3-VL ile oku
+  python scanning/build_database_v2.py --only 2015TUSIlkbaharTemel   # tek sınav (test için)
 """
 import argparse
 import json
@@ -25,9 +25,10 @@ import sqlite3
 
 import pymupdf
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # project root
 DATA_DIR = os.path.join(BASE_DIR, "data")
-DB_PATH = os.path.join(BASE_DIR, "tus_database_v2.db")
+DB_PATH = os.environ.get("TUS_QUESTION_DB", os.path.join(BASE_DIR, "instance", "tus_database_v2.db"))
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 IMAGES_DIR = os.path.join(BASE_DIR, "exports", "clean_images")
 IMG_PREFIX = "v2_"
 

@@ -14,16 +14,13 @@ How cards work
 
 Days are counted in TUS_TZ (default Europe/Istanbul).
 """
-import os
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from flask import Blueprint, jsonify, request
+from .. import config
 
-TZ = ZoneInfo(os.environ.get("TUS_TZ", "Europe/Istanbul"))
+TZ = ZoneInfo(config.TIMEZONE)
 LEARNED_DAYS = 21
-
-bp = Blueprint("srs", __name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS srs_cards (
@@ -54,8 +51,6 @@ def local_day(iso_ts):
 def init_db(conn):
     conn.executescript(SCHEMA)
 
-
-# ---------- scheduling ----------
 
 def schedule(card, grade, on=None):
     """Return new (ease, interval_days, reps, lapses, due) for a grade.
@@ -116,8 +111,6 @@ def record_answer(conn, user_id, q_code, correct, grade=None):
         "SELECT * FROM srs_cards WHERE user_id = ? AND q_code = ?", (user_id, q_code)
     ).fetchone()
 
-
-# ---------- statistics ----------
 
 def day_stats(conn, user_id, days=60):
     """Questions answered per local day for the last `days` days (oldest first)."""
@@ -190,66 +183,3 @@ def history(conn, user_id, limit=200):
            WHERE user_id = ? ORDER BY id DESC LIMIT ?""", (user_id, limit)).fetchall()
     return [dict(r, day=local_day(r["created_at"])) for r in rows]
 
-
-# ---------- API ----------
-# auth's before_request already guarantees a logged-in user for /api/*.
-
-def _ctx():
-    from auth import current_user, get_db
-    return get_db(), current_user()["id"]
-
-
-@bp.route("/api/stats")
-def api_stats():
-    db, uid = _ctx()
-    days = min(int(request.args.get("days", 60)), 365)
-    return jsonify(summary=summary(db, uid), days=day_stats(db, uid, days))
-
-
-@bp.route("/api/history")
-def api_history():
-    db, uid = _ctx()
-    return jsonify(history(db, uid, min(int(request.args.get("limit", 200)), 2000)))
-
-
-@bp.route("/api/review/due")
-def api_review_due():
-    """Cards due today. The page joins q_code with the question data
-    (subject, text, options) and can filter/group by subject itself."""
-    db, uid = _ctx()
-    return jsonify(due_cards(db, uid, request.args.get("limit")))
-
-
-@bp.route("/api/review/cards")
-def api_review_cards():
-    db, uid = _ctx()
-    rows = db.execute("SELECT * FROM srs_cards WHERE user_id = ?", (uid,)).fetchall()
-    return jsonify({r["q_code"]: dict(r) for r in rows})
-
-
-@bp.route("/api/review/<q_code>", methods=["POST"])
-def api_review_answer(q_code):
-    """Answer from the review page: {"correct": bool, "chosen": "B", "grade": "good"}"""
-    from auth import now_iso
-    db, uid = _ctx()
-    data = request.get_json(silent=True) or {}
-    correct = 1 if data.get("correct") else 0
-    chosen = data.get("chosen")
-    chosen = str(chosen).strip().upper()[:1] if chosen else None
-    db.execute(
-        "INSERT INTO attempts (user_id, q_code, chosen, correct, created_at) VALUES (?, ?, ?, ?, ?)",
-        (uid, q_code, chosen, correct, now_iso()))
-    card = record_answer(db, uid, q_code, bool(correct), data.get("grade"))
-    db.commit()
-    return jsonify(ok=True, card=dict(card) if card else None)
-
-
-@bp.route("/api/review/<q_code>/suspend", methods=["POST"])
-def api_review_suspend(q_code):
-    """Take a card out of the daily review (e.g. a cancelled question)."""
-    db, uid = _ctx()
-    on = 0 if (request.get_json(silent=True) or {}).get("unsuspend") else 1
-    db.execute("UPDATE srs_cards SET suspended = ? WHERE user_id = ? AND q_code = ?",
-               (on, uid, q_code))
-    db.commit()
-    return jsonify(ok=True)

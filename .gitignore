@@ -1,13 +1,22 @@
+# --- private: never commit ---
+# databases (progress, questions) + secret_key.txt
+instance/
+# source exam PDFs
+data/
+# extracted question images, reports
+exports/
+# old versions and experiments (local only)
+archive/
+*.db
+*.db-wal
+*.db-shm
+secret_key.txt
+.env
+
+# --- tooling ---
 .venv/
 __pycache__/
 *.pyc
 *.bak
 .DS_Store
-data/
-exports/
-*.db
-TusDenemeArşivi*/
-progress.db*
-secret_key.txt
-progress.db*
-secret_key.txt
+.idea/

@@ -1,17 +1,17 @@
 """
-User management for TusBakalım (run on the Pi, inside ~/tus with .venv active).
+User management for TusBakalım (run from the project folder with .venv active).
 
-    python manage.py add-user erdenalp
-    python manage.py set-password erdenalp
+    python manage.py add-user ornek_kullanici
+    python manage.py set-password ornek_kullanici
     python manage.py list-users
-    python manage.py delete-user erdenalp
+    python manage.py delete-user ornek_kullanici
 """
 import argparse
 import getpass
 import sqlite3
 import sys
 
-import auth
+from tusbakalim.storage import progress as auth
 
 
 def ask_password():
